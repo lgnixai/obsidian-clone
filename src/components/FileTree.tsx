@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { ChevronDown, ChevronRight, File, Folder, FolderPlus, FilePlus, MoreHorizontal } from 'lucide-react';
+import { ChevronDown, ChevronUp, ChevronRight, File, Folder, FolderPlus, FilePlus, MoreHorizontal, Clock, Trash, Copy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,9 +25,10 @@ export interface FileItem {
 interface FileTreeProps {
   onFileSelect?: (file: FileItem) => void;
   selectedFileId?: string;
+  onOpenRecent?: () => void;
 }
 
-const FileTree: React.FC<FileTreeProps> = ({ onFileSelect, selectedFileId }) => {
+const FileTree: React.FC<FileTreeProps> = ({ onFileSelect, selectedFileId, onOpenRecent }) => {
   const [files, setFiles] = useState<Record<string, FileItem>>({});
   const [rootItems, setRootItems] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -140,6 +141,30 @@ const FileTree: React.FC<FileTreeProps> = ({ onFileSelect, selectedFileId }) => 
     }));
   }, []);
 
+  const expandAllFolders = useCallback(() => {
+    setFiles(prev => {
+      const updated: Record<string, FileItem> = { ...prev };
+      Object.values(updated).forEach(item => {
+        if (item.type === 'folder') {
+          updated[item.id] = { ...item, isExpanded: true };
+        }
+      });
+      return updated;
+    });
+  }, []);
+
+  const collapseAllFolders = useCallback(() => {
+    setFiles(prev => {
+      const updated: Record<string, FileItem> = { ...prev };
+      Object.values(updated).forEach(item => {
+        if (item.type === 'folder') {
+          updated[item.id] = { ...item, isExpanded: false };
+        }
+      });
+      return updated;
+    });
+  }, []);
+
   const createNewItem = useCallback((parentId: string | null, type: 'file' | 'folder', fileType?: 'markdown' | 'database' | 'canvas' | 'html' | 'code') => {
     const newId = Date.now().toString();
     const parentPath = parentId ? files[parentId].path : '';
@@ -215,19 +240,35 @@ const FileTree: React.FC<FileTreeProps> = ({ onFileSelect, selectedFileId }) => 
     if (!newName.trim()) return;
     
     setFiles(prev => {
-      const item = prev[id];
-      const parentPath = item.parentId ? files[item.parentId].path : '';
+      const target = prev[id];
+      if (!target) return prev;
+      const parentPath = target.parentId ? prev[target.parentId].path : '';
+      const oldPath = target.path;
       const newPath = `${parentPath}/${newName}`;
-      
-      return {
-        ...prev,
-        [id]: { ...item, name: newName, path: newPath }
-      };
+
+      const updated: Record<string, FileItem> = { ...prev };
+      updated[id] = { ...target, name: newName, path: newPath };
+
+      if (target.type === 'folder' && target.children && target.children.length > 0) {
+        const queue = [...target.children];
+        while (queue.length) {
+          const childId = queue.shift()!;
+          const child = updated[childId];
+          if (!child) continue;
+          const childPath = child.path.replace(oldPath + '/', newPath + '/');
+          updated[childId] = { ...child, path: childPath };
+          if (child.type === 'folder' && child.children && child.children.length > 0) {
+            queue.push(...child.children);
+          }
+        }
+      }
+
+      return updated;
     });
     
     setEditingId(null);
     setNewItemName('');
-  }, [files]);
+  }, []);
 
   const handleFileClick = useCallback((file: FileItem) => {
     if (file.type === 'file' && onFileSelect) {
@@ -311,41 +352,56 @@ const FileTree: React.FC<FileTreeProps> = ({ onFileSelect, selectedFileId }) => 
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => {
+              <DropdownMenuItem onClick={(e) => {
+                e.stopPropagation();
                 setEditingId(id);
                 setNewItemName(file.name);
               }}>
                 重命名
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); const item = files[id]; if (item?.path) navigator.clipboard.writeText(item.path); }}>
+                <div className="flex items-center gap-2"><Copy className="h-3 w-3" />复制路径</div>
+              </DropdownMenuItem>
               {file.type === 'folder' && (
                 <>
-                  <DropdownMenuItem onClick={() => createNewItem(id, 'file', 'markdown')}>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); createNewItem(id, 'file', 'markdown'); }}>
                     新建Markdown文档
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => createNewItem(id, 'file', 'database')}>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); createNewItem(id, 'file', 'database'); }}>
                     新建数据库
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => createNewItem(id, 'file', 'canvas')}>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); createNewItem(id, 'file', 'canvas'); }}>
                     新建画图
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => createNewItem(id, 'file', 'html')}>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); createNewItem(id, 'file', 'html'); }}>
                     新建HTML
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => createNewItem(id, 'file', 'code')}>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); createNewItem(id, 'file', 'code'); }}>
                     新建代码
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => createNewItem(id, 'folder')}>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); createNewItem(id, 'folder'); }}>
                     新建文件夹
                   </DropdownMenuItem>
                 </>
               )}
+              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setFiles(prev => { const updated = { ...prev }; const remove = (rid: string) => { const n = updated[rid]; if (!n) return; if (n.type === 'folder' && n.children) { n.children.forEach(remove); } delete updated[rid]; }; const t = updated[id]; if (t?.parentId && updated[t.parentId]) { const p = updated[t.parentId]; updated[t.parentId] = { ...p, children: (p.children || []).filter(cid => cid !== id) }; } remove(id); return updated; }); setRootItems(prev => prev.filter(rid => rid !== id)); }}>
+                <div className="flex items-center gap-2 text-destructive"><Trash className="h-3 w-3" />删除</div>
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
 
         {file.type === 'folder' && file.isExpanded && file.children && (
           <div>
-            {file.children.map(childId => renderFileItem(childId, depth + 1))}
+            {([...file.children]
+              .sort((a, b) => {
+                const A = files[a];
+                const B = files[b];
+                if (!A || !B) return 0;
+                if (A.type !== B.type) return A.type === 'folder' ? -1 : 1;
+                return A.name.localeCompare(B.name, 'zh-CN');
+              })
+            ).map(childId => renderFileItem(childId, depth + 1))}
           </div>
         )}
       </div>
@@ -372,6 +428,33 @@ const FileTree: React.FC<FileTreeProps> = ({ onFileSelect, selectedFileId }) => 
             onClick={() => createNewItem(null, 'folder')}
           >
             <FolderPlus className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0"
+            onClick={expandAllFolders}
+            title="展开全部"
+          >
+            <ChevronDown className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0"
+            onClick={collapseAllFolders}
+            title="折叠全部"
+          >
+            <ChevronUp className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0"
+            onClick={() => onOpenRecent && onOpenRecent()}
+            title="近期文件"
+          >
+            <Clock className="h-3 w-3" />
           </Button>
         </div>
       </div>
