@@ -163,7 +163,31 @@ const ObsidianLayout: React.FC = () => {
     };
     
     setPanelTree(prevTree => updatePanelWithFile(prevTree));
+  }, [addToRecentFiles]);
+
+  const openRecent = useCallback(() => {
+    setCommandPaletteOpen(true);
   }, []);
+
+  const createNewMarkdown = useCallback(() => {
+    const id = Date.now().toString();
+    const newFile: FileItem = {
+      id,
+      name: '新文档.md',
+      type: 'file',
+      fileType: 'markdown',
+      path: `/新文档.md`,
+      content: '# 新文档\n\n在这里开始编写...'
+    };
+    setFiles(prev => ({ ...prev, [id]: newFile }));
+    handleFileSelect(newFile);
+    const saved = localStorage.getItem('obsidian-files');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      parsed[id] = newFile;
+      localStorage.setItem('obsidian-files', JSON.stringify(parsed));
+    }
+  }, [handleFileSelect]);
 
   const findPanelById = useCallback((tree: PanelNode, id: string): PanelNode | null => {
     if (tree.id === id) return tree;
@@ -489,6 +513,7 @@ const ObsidianLayout: React.FC = () => {
           <FileTree 
             onFileSelect={handleFileSelect}
             selectedFileId={selectedFile?.id}
+            onOpenRecent={openRecent}
           />
         );
       }
@@ -563,7 +588,13 @@ const ObsidianLayout: React.FC = () => {
                 }
               })()
             ) : (
-              <Editor />
+              <Editor 
+                className=""
+                onCreateNew={createNewMarkdown}
+                onOpenFile={() => setCommandPaletteOpen(true)}
+                onOpenRecent={openRecent}
+                onCloseCurrent={handleCloseCurrentTab}
+              />
             )}
           </div>
         );
@@ -613,7 +644,10 @@ const ObsidianLayout: React.FC = () => {
     handleFileSelect,
     selectedFile,
     files,
-    saveFileContent
+    saveFileContent,
+    openRecent,
+    createNewMarkdown,
+    handleCloseCurrentTab
   ]);
 
   return (
